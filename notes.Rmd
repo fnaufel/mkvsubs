@@ -1,0 +1,330 @@
+---
+title: 'mkvsubs'
+author: 'fnaufel'
+email: 'https://fnaufel.github.io/'
+date: '   (v. `r format(Sys.Date(), "%d/%m/%Y")`)'
+lang: 'en'
+
+output: 
+  # To install these output formats, run
+  #   install.packages("devtools")
+  #   devtools::install_github("fnaufel/fnaufelRmd")
+  fnaufelRmd::html_report:
+    []
+---
+
+```{r setup, include=FALSE}
+# The next command configures MANY things and loads quite a few packages.
+# 
+# If you want to see what's being done, execute 
+# 
+#   cat(
+#     system.file(
+#       "rmarkdown/resources/R/_common_report.R", 
+#       package = "fnaufelRmd"
+#     )
+#   )
+# 
+# to find out the location of the file. Then open the file.
+# 
+# If you want to change the configuration, copy the file, edit it, and
+# source it instead of the package file. 
+# 
+# Or simply write your commands here in this code chunk.
+
+source(
+  system.file(
+    "rmarkdown/resources/R/_common_report.R",
+    package = "fnaufelRmd"
+  )
+)
+```
+
+
+# Goal
+
+* Extract subtitles from an mkv file.
+
+
+# Usage
+
+```
+mkvsubs.R LANG MKVFILE
+```
+
+# Details
+
+* If the track with the specified language does not exist, an error message is given and execution ends.
+
+* If a single track with the specified language exists, a file will be created in the same directory and with the same name as the mkv file --- but with the srt extension.
+
+* If more than one track with the specified language exists, the user will be presented those tracks and their names, from which they must choose one.
+  
+* If a previous srt file exists, the user will be asked to confirm that the file should be overwritten.
+
+
+# Tasks
+
+## Call mkvinfo
+
+```{r}
+f <- 'Prehistoric.Planet.2022.S01E01.720p.WEB.x265-MiNX.mkv'
+
+info <- system2('mkvinfo', f, stdout = TRUE)
+
+info
+```
+
+
+## Find track and name
+
+### Using grep on the entire output
+
+```{r}
+l <- 'por'
+
+matches <- grep(
+  paste0('+ Language: ', l),
+  info
+)
+
+matches
+```
+
+
+### Filter only number, name, language, type (USE THIS ONE)
+
+* `+ Track number: ... (track ID for mkvmerge & mkvextract: ...)`
+
+* `+ Name: ...`
+
+* `+ Language: ...`
+
+* `+ Track type: subtitles`
+
+```{r}
+pattern <- paste0(
+  '\\+ (',
+  '(Track number: )|',
+  '(Name: )|',
+  '(Language: )|',
+  '(Track type: )',
+  ').*$'
+)
+
+matches <- grep(
+  pattern,
+  info
+)
+
+matches
+
+info <- info[matches]
+
+info
+```
+
+
+## Build data frame
+
+* Process each block of $4$ consecutive lines.
+
+* Get track number.
+
+* Get name.
+
+* Get language.
+
+* Get type.
+
+```{r}
+track_no <- vector('numeric')
+track_name <- vector('character')
+track_lang <- vector('character')
+track_type <- vector('character')
+
+i <- 1
+j <- 0
+
+while (i <= length(info)) {
+  
+  # Look for track number
+  found_trackno <- regexpr(
+    '\\+ Track number: .*: ([[:digit:]]+)\\)$',
+    info[i],
+    perl = TRUE
+  )
+  
+  # If not found, try next line
+  if (found_trackno == -1) {
+    i <- i + 1
+    next
+  }
+  
+  # Found track number: save
+  j <- j + 1
+  start <- attr(found_trackno, 'capture.start')[1]
+  stop = start + attr(found_trackno, 'capture.length')[1] - 1
+  track_no[j] <- substr(info[i], start, stop)
+
+  # Must find name
+  i <- i + 1
+  found_name <- regexpr(
+    '\\+ Name: (.+)',
+    info[i],
+    perl = TRUE
+  )
+  
+  # If not found, error
+  if (found_name == -1) {
+    stop('Name not found for track ', track_no[j])
+  }
+  
+  # Found name: save
+  start <- attr(found_name, 'capture.start')[1]
+  stop = start + attr(found_name, 'capture.length')[1] - 1
+  track_name[j] <- substr(info[i], start, stop)
+
+  # Must find language
+  i <- i + 1
+  found_lang <- regexpr(
+    '\\+ Language: (.+)',
+    info[i],
+    perl = TRUE
+  )
+  
+  # If not found, error
+  if (found_lang == -1) {
+    stop('Language not found for track ', track_no[j])
+  }
+  
+  # Found language: save
+  start <- attr(found_lang, 'capture.start')[1]
+  stop = start + attr(found_lang, 'capture.length')[1] - 1
+  track_lang[j] <- substr(info[i], start, stop)
+  
+  # Must find type
+  i <- i + 1
+  found_type <- regexpr(
+    '\\+ Track type: (.+)',
+    info[i],
+    perl = TRUE
+  )
+  
+  # If not found, error
+  if (found_type == -1) {
+    stop('Type not found for track ', track_no[j])
+  }
+  
+  # Found type: save
+  start <- attr(found_type, 'capture.start')[1]
+  stop = start + attr(found_type, 'capture.length')[1] - 1
+  track_type[j] <- substr(info[i], start, stop)
+  
+  # Next block
+  i <- i + 1
+  
+}
+
+attributes(track_no) <- NULL
+attributes(track_name) <- NULL
+attributes(track_lang) <- NULL
+attributes(track_type) <- NULL
+
+df <- data.frame(
+  track_no,
+  track_name,
+  track_lang,
+  track_type
+)
+```
+
+```{r}
+df
+```
+
+## Filter dataframe
+
+```{r}
+found <- subset(df, track_lang == l & track_type == 'subtitles')
+```
+
+```{r}
+found
+```
+
+
+## If no matches, error
+
+```{r}
+if (nrow(found) == 0)
+  stop('No subtitle tracks for "', l, '" language found.')
+```
+
+
+## If more than one match, user chooses
+
+```{r}
+# Choose the first (hopefully the only) track
+choice <-  1
+```
+
+```{r eval=FALSE}
+# If more than one, show menu
+if (nrow(found) > 1) {
+  
+  choice <- menu(
+    found$track_name, title = 'Several tracks found.\nChoose one:'
+  )
+  
+  if (choice == 0) {
+    stop('No track selected.')
+  }
+  
+}
+```
+
+
+## Assemble and run command
+
+```{r}
+srt_name <- paste0(
+  substr(f, start = 1, stop = nchar(f) - 4),
+  '.srt'
+)
+```
+
+```{r}
+track_spec <- paste0(
+  found[choice, 'track_no'],
+  ':',
+  srt_name
+)
+```
+
+```{r}
+if (file.exists(srt_name)) {
+  
+  overwrite <- menu(
+    choices = c('Yes', 'No'),
+    title = paste0(
+      'File exists:\n    ',
+      srt_name, '\n',
+      'Overwrite?'
+    )
+  )
+  
+}
+```
+
+```{r}
+system2(
+  'mkvextract',
+  c(
+    f,
+    'tracks',
+    track_spec
+  )
+)
+```
+

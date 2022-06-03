@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.Rdata
+.httr-oauth
+.DS_Store
+/*.mkv
+/*.srt
+/html_files/
+/notes.html
+/pdf_files/
