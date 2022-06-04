@@ -3,8 +3,8 @@
 
 # Check and print args ----------------------------------------------------
 
-if (is.null(argv) | length(argv) != 2) {
-  cat("Usage: mkvsubs.r MKVFILE LANGUAGE\n")
+if (is.null(argv) | !(length(argv) %in% c(1, 2))) {
+  cat("Usage: mkvsubs.r MKVFILE [LANGUAGE]\n")
   q()
 }
 
@@ -12,8 +12,9 @@ mkvfile <- argv[1]
 language <- argv[2]
 
 cat('\nFile    : ', mkvfile, '\n')
-cat('Language: ', language, '\n\n')
-
+if (!is.na(language))
+  cat('Language: ', language, '\n')
+cat('\n')
 
 # Call mkvinfo ------------------------------------------------------------
 
@@ -141,16 +142,31 @@ df <- data.frame(
   track_type
 )
 
+df <- subset(df, track_type == 'subtitles')
+
 
 # Filter language ---------------------------------------------------------
 
-found <- subset(df, track_lang == language & track_type == 'subtitles')
+if (is.na(language)) {
+  found <- df
+} else {
+  found <- subset(df, track_lang == language)
+}
 
 
 # If no matches, error ----------------------------------------------------
 
 if (nrow(found) == 0)
-  stop('No subtitle tracks for "', language, '" language found.')
+  stop(
+    paste0(
+      'No subtitle tracks found',
+      ifelse(
+        is.na(language),
+        '.',
+        paste0('for language ', language, '.')
+      )
+    )
+  )
 
 
 # If more than one match, user chooses ------------------------------------
@@ -162,7 +178,13 @@ choice <-  1
 if (nrow(found) > 1) {
   
   choice <- menu(
-    found$track_name, title = 'Several tracks found. Choose one:'
+    paste0(
+      found$track_name, 
+      ' (',
+      found$track_lang,
+      ')'
+    ),
+    title = 'Several tracks found. Choose one:'
   )
   
   if (choice == 0) {
