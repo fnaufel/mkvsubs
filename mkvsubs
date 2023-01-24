@@ -1,0 +1,73 @@
+#!/usr/bin/env raku
+use v6.d;
+
+sub MAIN($mkv-file, $language = '') {
+
+    my $file = $mkv-file.IO.open;
+    unless $file {
+        put "ERROR: { $file.exception }";
+        exit;
+    }
+
+    say "Reading file $mkv-file...";
+
+    my $proc = run <mkvinfo>, "$mkv-file", :out, :err;
+    my $lines = $proc.out.lines.join("\n") ~ "\n";
+    my $errors = $proc.err.slurp;
+
+    if $errors {
+        say $errors;
+        exit;
+    }
+
+    # THE GRAMMAR!
+    grammar mkvinfo {
+
+        regex TOP { [ <level0> | "\n" ]+ }
+
+        regex level0 {
+            <level0-header> "\n"
+            [ <tracks-block> | <level1-other> "\n" ]*
+        }
+
+        token level0-header {
+            \+    # initial + (no bar)
+            ' '     # exactly one space
+            \V+    # anything except vertical ws
+        }
+
+        token tracks-block {
+            "|+ Tracks\n"
+            <one-track>+
+        }
+
+        token one-track {
+            "| + Track\n"
+            [ <track-item> "\n" ]+   # TODO: add code here to assemble track data
+        }
+
+        token track-item {
+            \|
+            '  ' ' '*  # Must have at least 2 spaces
+            \+
+            ' '
+            \V+        # TODO: add code here to send item up
+        }
+
+        # Other level one items (or their descendants).
+        token level1-other {
+            \|    # initial bar
+            ' '*    # zero (level 1) or more (other descendant levels) spaces
+            \+     # plus sign
+            ' '     # exactly one space
+            \V+    # anything except vertical ws
+        }
+    }
+
+    say mkvinfo.parse($lines);
+
+#     TODO
+#     If no language was asked, show menu and get choice.
+#     Extract desired track.
+
+}
