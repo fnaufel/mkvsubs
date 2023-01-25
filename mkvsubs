@@ -12,7 +12,7 @@ sub MAIN($mkv-file, $language = '') {
     say "Reading file $mkv-file...";
 
     my $proc = run <mkvinfo>, "$mkv-file", :out, :err;
-    my $lines = $proc.out.lines.join("\n") ~ "\n";
+    my $lines = $proc.out.lines.join("\n");
     my $errors = $proc.err.slurp;
 
     if $errors {
@@ -23,27 +23,30 @@ sub MAIN($mkv-file, $language = '') {
     # THE GRAMMAR!
     grammar mkvinfo {
 
-        regex TOP { [ <level0> | "\n" ]+ }
+        token TOP { <level0>+ }
 
-        regex level0 {
-            <level0-header> "\n"
-            [ <tracks-block> | <level1-other> "\n" ]*
+        token level0 {
+            <level0-header>
+            [ <tracks-block> | <level1-other> ]*
         }
 
         token level0-header {
-            \+    # initial + (no bar)
+            \+      # initial + (no bar)
             ' '     # exactly one space
-            \V+    # anything except vertical ws
+            \V+     # anything except vertical ws
+            \v
         }
 
         token tracks-block {
-            "|+ Tracks\n"
+            "|+ Tracks"
+            \v
             <one-track>+
         }
 
         token one-track {
-            "| + Track\n"
-            [ <track-item> "\n" ]+   # TODO: add code here to assemble track data
+            "| + Track"
+            \v
+            <track-item>+ %% \v   # TODO: add code here to assemble track data
         }
 
         token track-item {
@@ -56,15 +59,16 @@ sub MAIN($mkv-file, $language = '') {
 
         # Other level one items (or their descendants).
         token level1-other {
-            \|    # initial bar
+            \|      # initial bar
             ' '*    # zero (level 1) or more (other descendant levels) spaces
-            \+     # plus sign
+            \+      # plus sign
             ' '     # exactly one space
-            \V+    # anything except vertical ws
+            \V+     # anything except vertical ws
+            \n?     # newline is optional on last line
         }
     }
 
-    say mkvinfo.parse($lines);
+    my $parsed = mkvinfo.parse($lines);
 
 #     TODO
 #     If no language was asked, show menu and get choice.
