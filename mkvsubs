@@ -54,7 +54,11 @@ sub MAIN($mkv-file, $language = '') {
             '  ' ' '*  # Must have at least 2 spaces
             \+
             ' '
-            \V+        # TODO: add code here to send item up
+            <track-item-text>
+        }
+
+        token track-item-text {
+            \V+
         }
 
         # Other level one items (or their descendants).
@@ -68,7 +72,108 @@ sub MAIN($mkv-file, $language = '') {
         }
     }
 
-    my $parsed = mkvinfo.parse($lines);
+    # The actions
+    class Actions {
+
+        method TOP($/) {
+
+            my @blocks = $/<level0>;
+            my @tracks;
+
+            for @blocks {
+                if $_.made {
+                    @tracks .= push: $_.made.Slip;
+                }
+            }
+
+            make @tracks;
+
+        }
+
+        method level0($/) {
+
+            my @blocks = $/<tracks-block>;
+            my @tracks;
+
+            for @blocks {
+                @tracks .= push: $_.made.Slip;
+            }
+
+            make @tracks;
+
+        }
+
+        method tracks-block($/) {
+
+            my @tracks = $/<one-track>;
+            my @good-tracks;
+
+            for @tracks -> $track {
+
+                if $track.made {
+                    @good-tracks.push: $track.made;
+                }
+
+            }
+
+            make @good-tracks;
+
+        }
+
+        method one-track($/) {
+
+            my $track-no-regex = rx/
+            ^
+            Track\snumber\:\s
+            \d+\s
+            \(track\sID\sfor\smkvmerge\s\&\smkvextract\:\s
+            (\d+)\)
+            $
+            /;
+
+            my $track-type-regex = rx/ ^Track\stype\:\ssubtitles$ /;
+            my $track-lang-regex = rx/ ^Language\:\s(\w+)$ /;
+            my $track-name-regex = rx/ ^Name\:\s(.+)$ /;
+
+            my %track;
+
+            for $/<track-item> -> $item {
+
+                my $line = $item<track-item-text>.Str;
+                my $match-number = $line ~~ $track-no-regex;
+                my $match-type = $line ~~ $track-type-regex;
+                my $match-lang = $line ~~ $track-lang-regex;
+                my $match-name = $line ~~ $track-name-regex;
+
+                if $match-number {
+                    %track.append: (number => ~$match-number[0]);
+                }
+                elsif $match-type {
+                    %track.append: (type => 'subtitles');
+                }
+                elsif $match-lang {
+                    %track.append: (lang => ~$match-lang[0]);
+                }
+                elsif $match-name {
+                    %track.append: (name => ~$match-name[0]);
+                }
+
+            }
+
+            if %track<type>:exists {
+                # is subtitle track
+                make %track;
+            } else {
+                # is not subtitle track
+                make False;
+            }
+
+        }
+
+    }
+
+    my $parsed = mkvinfo.parse($lines, actions => Actions.new);
+    say $parsed.made.raku;
 
 #     TODO
 #     If no language was asked, show menu and get choice.
