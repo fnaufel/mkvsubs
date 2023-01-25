@@ -92,30 +92,14 @@ sub MAIN($mkv-file, $language = '') {
 
         method level0($/) {
 
-            my @blocks = $/<tracks-block>;
-            my @tracks;
-
-            for @blocks {
-                @tracks .= push: $_.made.Slip;
-            }
-
-            make @tracks;
+            make $/<tracks-block>.map(*.made).flat;
 
         }
 
         method tracks-block($/) {
 
             my @tracks = $/<one-track>;
-            my @good-tracks;
-
-            for @tracks -> $track {
-
-                if $track.made {
-                    @good-tracks.push: $track.made;
-                }
-
-            }
-
+            my @good-tracks = @tracks>>.made.grep: { .so };
             make @good-tracks;
 
         }
