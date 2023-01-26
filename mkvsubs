@@ -1,7 +1,50 @@
 #!/usr/bin/env raku
 use v6.d;
 
-sub MAIN($mkv-file, $language = '') {
+sub choose-track(@parsed, $language) {
+
+    sub find-language-track(@parsed, $language) {
+        return @parsed.grep: :k, { $_<lang> eq $language; };
+    }
+
+    sub build-menu-items(@parsed) {
+
+        my $n = @parsed.elems;
+        my $digits-format = '%' ~ "0{ $n.chars }d";
+        (1 .. $n).map: {
+            my $formatted-n = sprintf $digits-format, $_;
+            "$formatted-n. { @parsed[$_ - 1]<lang> }:\t{ @parsed[$_ - 1]<name> // '' }"
+        }
+
+    }
+
+    my $track-index;
+
+    # User provided language: try to find the track.
+    if $language {
+        $track-index = find-language-track @parsed, $language;
+        if $track-index.elems == 1 { return $track-index }
+    }
+
+    # User did not provide the language, or we didn't find the track, or we found more than one track.
+    my @menu-items = build-menu-items @parsed;
+
+    say "\nYou must choose the track:\n";
+    @menu-items>>.say;
+
+    my $max = @menu-items.elems;
+    my $choice = 0;
+    while ! ($choice (elem) 1..$max) {
+        $choice = prompt "\nEnter track number ('q' to quit) => ";
+        exit 1 if $choice ~~ /:i ^q$/;
+    }
+
+    return $choice - 1;
+
+}
+
+
+sub MAIN($mkv-file, $language = Nil) {
 
     my $file = $mkv-file.IO.open;
     unless $file {
@@ -27,13 +70,16 @@ sub MAIN($mkv-file, $language = '') {
 
         token level0 {
             <level0-header>
-            [ <tracks-block> | <level1-other> ]*
+            [<tracks-block> | <level1-other>]*
         }
 
         token level0-header {
-            \+      # initial + (no bar)
-            ' '     # exactly one space
-            \V+     # anything except vertical ws
+            \+
+            # initial + (no bar)
+            ' '
+            # exactly one space
+            \V+
+            # anything except vertical ws
             \v
         }
 
@@ -46,12 +92,14 @@ sub MAIN($mkv-file, $language = '') {
         token one-track {
             "| + Track"
             \v
-            <track-item>+ %% \v   # TODO: add code here to assemble track data
+            <track-item>+ %% \v
+            # TODO: add code here to assemble track data
         }
 
         token track-item {
             \|
-            '  ' ' '*  # Must have at least 2 spaces
+            '  ' ' '*
+            # Must have at least 2 spaces
             \+
             ' '
             <track-item-text>
@@ -63,12 +111,18 @@ sub MAIN($mkv-file, $language = '') {
 
         # Other level one items (or their descendants).
         token level1-other {
-            \|      # initial bar
-            ' '*    # zero (level 1) or more (other descendant levels) spaces
-            \+      # plus sign
-            ' '     # exactly one space
-            \V+     # anything except vertical ws
-            \n?     # newline is optional on last line
+            \|
+            # initial bar
+            ' '*
+            # zero (level 1) or more (other descendant levels) spaces
+            \+
+            # plus sign
+            ' '
+            # exactly one space
+            \V+
+            # anything except vertical ws
+            \n?
+            # newline is optional on last line
         }
     }
 
@@ -91,9 +145,7 @@ sub MAIN($mkv-file, $language = '') {
         }
 
         method level0($/) {
-
             make $/<tracks-block>.map(*.made).flat;
-
         }
 
         method tracks-block($/) {
@@ -156,11 +208,14 @@ sub MAIN($mkv-file, $language = '') {
 
     }
 
-    my $parsed = mkvinfo.parse($lines, actions => Actions.new);
-    say $parsed.made.raku;
+    my @parsed = mkvinfo.parse($lines, actions => Actions.new)
+            .made
+            .sort: *<lang>;
+    #    say @parsed;
 
-#     TODO
-#     If no language was asked, show menu and get choice.
-#     Extract desired track.
+    my $track-number = choose-track @parsed, $language;
+    say $track-number;
+
+    #     TODO:  Extract desired track.
 
 }
