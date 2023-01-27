@@ -1,49 +1,6 @@
 #!/usr/bin/env raku
 use v6.d;
 
-sub choose-track(@parsed, $language) {
-
-    sub find-language-track(@parsed, $language) {
-        return @parsed.grep: :k, { $_<lang> eq $language; };
-    }
-
-    sub build-menu-items(@parsed) {
-
-        my $n = @parsed.elems;
-        my $digits-format = '%' ~ "0{ $n.chars }d";
-        (1 .. $n).map: {
-            my $formatted-n = sprintf $digits-format, $_;
-            "$formatted-n. { @parsed[$_ - 1]<lang> }:\t{ @parsed[$_ - 1]<name> // '' }"
-        }
-
-    }
-
-    my $track-index;
-
-    # User provided language: try to find the track.
-    if $language {
-        $track-index = find-language-track @parsed, $language;
-        if $track-index.elems == 1 { return $track-index }
-    }
-
-    # User did not provide the language, or we didn't find the track, or we found more than one track.
-    my @menu-items = build-menu-items @parsed;
-
-    say "\nYou must choose the track:\n";
-    @menu-items>>.say;
-
-    my $max = @menu-items.elems;
-    my $choice = 0;
-    while ! ($choice (elem) 1..$max) {
-        $choice = prompt "\nEnter track number ('q' to quit) => ";
-        exit 1 if $choice ~~ /:i ^q$/;
-    }
-
-    return $choice - 1;
-
-}
-
-
 sub MAIN($mkv-file, $language = Nil) {
 
     my $file = $mkv-file.IO.open;
@@ -54,12 +11,12 @@ sub MAIN($mkv-file, $language = Nil) {
 
     say "Reading file $mkv-file...";
 
-    my $proc = run <mkvinfo>, "$mkv-file", :out, :err;
+    my $proc = run <mkvinfo>, "$mkv-file", :out;
     my $lines = $proc.out.lines.join("\n");
-    my $errors = $proc.err.slurp;
 
-    if $errors {
-        say $errors;
+    # mkvinfo sends errors to stdout instead of stderr!
+    if $proc.exitcode != 0 {
+        say "Error: $lines";
         exit;
     }
 
@@ -198,6 +155,10 @@ sub MAIN($mkv-file, $language = Nil) {
 
             if %track<type>:exists {
                 # is subtitle track
+                # if no language, add *no language info*
+                if %track<lang>:!exists {
+                    %track<lang> = '(no language info)';
+                }
                 make %track;
             } else {
                 # is not subtitle track
@@ -208,14 +169,68 @@ sub MAIN($mkv-file, $language = Nil) {
 
     }
 
-    my @parsed = mkvinfo.parse($lines, actions => Actions.new)
-            .made
-            .sort: *<lang>;
-    #    say @parsed;
+    my @parsed = mkvinfo.parse($lines, actions => Actions.new).made;
+
+    if @parsed.elems == 0 {
+        say "Found no subtitle tracks!";
+        exit 2;
+    } else {
+        @parsed .= sort: *<lang>;
+    }
 
     my $track-number = choose-track @parsed, $language;
-    say $track-number;
+    my $srt-file = (($mkv-file.ends-with: '.mkv') ??
+            $mkv-file.substr: 0, *-4 !!
+            $mkv-file)
+            ~ '.srt';
 
-    #     TODO:  Extract desired track.
+    run <mkvextract>, "$mkv-file", <tracks>, "$track-number:$srt-file";
+    say "Done."
 
 }
+
+sub choose-track(@parsed, $language) {
+
+    my $track-index;
+
+    # User provided language: try to find the track.
+    if $language {
+        $track-index = find-language-track @parsed, $language;
+        if $track-index.elems == 1 { return @parsed[$track-index[0]]<number> }
+        if $track-index.elems > 1 {
+            @parsed = @parsed[|$track-index];
+        }
+    }
+
+    # User did not provide the language, or we didn't find the track, or we found more than one track.
+    my @menu-items = build-menu-items @parsed;
+
+    say "\nYou must choose the track:\n";
+    @menu-items>>.say;
+
+    my $max = @menu-items.elems;
+    my $choice = 0;
+    while ! ($choice (elem) 1..$max) {
+        $choice = prompt "\nEnter track number ('q' to quit) => ";
+        exit 1 if $choice ~~ /:i ^q$/;
+    }
+
+    return @parsed[$choice - 1]<number>;
+
+}
+
+sub find-language-track(@parsed, $language) {
+    return @parsed.grep: :k, { $_<lang> eq $language; };
+}
+
+sub build-menu-items(@parsed) {
+
+    my $n = @parsed.elems;
+    my $digits-format = '%' ~ "0{ $n.chars }d";
+    (1 .. $n).map: {
+        my $formatted-n = sprintf $digits-format, $_;
+        "$formatted-n. { @parsed[$_ - 1]<lang> }:\t{ @parsed[$_ - 1]<name> // '' }"
+    }
+
+}
+
